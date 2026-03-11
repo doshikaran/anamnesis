@@ -1,0 +1,18 @@
+# Anamnesis Backend — Dev/test dependencies
+-r requirements.txt
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.24.0
+pytest-cov==6.0.0
+httpx==0.28.1
+respx==0.21.2
+factory-boy==3.3.1
+
+# Linting & formatting
+black==24.10.0
+isort==5.13.2
+mypy==1.13.0
+
+# Type stubs
+types-redis==4.6.0.20241016

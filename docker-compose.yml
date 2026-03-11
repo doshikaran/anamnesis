@@ -1,0 +1,81 @@
+# Anamnesis Backend — Local development
+# Usage: docker-compose up -d && curl http://localhost:8000/health
+
+version: "3.9"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: anamnesis
+      POSTGRES_PASSWORD: anamnesis_dev
+      POSTGRES_DB: anamnesis
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U anamnesis -d anamnesis"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.api
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://anamnesis:anamnesis_dev@postgres:5432/anamnesis
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://anamnesis:anamnesis_dev@postgres:5432/anamnesis
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: celery -A app.workers.celery_app worker --loglevel=info
+
+  beat:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.worker
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://anamnesis:anamnesis_dev@postgres:5432/anamnesis
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      - worker
+    command: celery -A app.workers.celery_app beat --loglevel=info
+
+volumes:
+  postgres_data:
+  redis_data:
