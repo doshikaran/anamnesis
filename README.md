@@ -2,7 +2,7 @@
 
 **Remember every relationship.** Personal relationship and commitment intelligence — your contacts, promises, and patterns in one place.
 
-Anamnesis ingests email (Gmail) and calendar (Google Calendar), extracts people and commitments with AI, and answers natural-language questions over your data. It surfaces daily briefings, commitment nudges, and relationship silence detection. This repository is the backend API, Celery workers, and ingestion connectors.
+Anamnesis ingests email (Gmail), slack and calendar (Google Calendar), extracts people and commitments with AI, and answers natural-language questions over your data. It surfaces daily briefings, commitment nudges, and relationship silence detection. This repository is the backend API, Celery workers, and ingestion connectors.
 
 ---
 
@@ -174,25 +174,6 @@ data: {"tokens_used": 420, "cost_usd": 0.002, "latency_ms": 1200}
 
 See `.env.example` for the full list with comments.
 
----
-
-## Project structure (top level)
-
-| Path | Description |
-|------|-------------|
-| `app/main.py` | FastAPI app, lifespan, CORS, exception handler, /health |
-| `app/api/` | Routers: auth, users, connections, people, messages, queries, insights, notifications, webhooks |
-| `app/core/` | Database, Redis, security (JWT), encryption, rate limiter, exceptions, events |
-| `app/models/` | SQLAlchemy ORM models |
-| `app/repositories/` | Data access layer |
-| `app/services/` | Auth, message ingest, people, user (deletion) |
-| `app/ai/` | Query engine, analysis, embeddings, prompts, briefing |
-| `app/ingestion/` | Connectors: Gmail, Google Calendar, Slack (BaseConnector) |
-| `app/workers/` | Celery app, sync_tasks, analysis_tasks, insight_tasks, notification_tasks, maintenance_tasks |
-| `alembic/` | Migrations |
-| `docker/` | Dockerfile.api, Dockerfile.worker, Dockerfile.beat, nginx.conf |
-
----
 
 ## Key architectural decisions
 
@@ -212,4 +193,4 @@ Proprietary. All rights reserved.
 
 ---
 
-**Anamnesis Backend** — Production-ready for private beta. Next step: Frontend (Next.js).
+**Anamnesis Backend** — Production-ready for private beta.
