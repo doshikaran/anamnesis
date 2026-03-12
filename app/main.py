@@ -92,16 +92,20 @@ async def anamnesis_exception_handler(request: Request, exc: AnamnesisException)
         status_code=exc.status_code,
         request_id=request_id,
     )
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={
-            "error": {
-                "code": exc.code,
-                "message": exc.message,
-                "request_id": request_id,
-            }
-        },
-    )
+    content = {
+        "error": {
+            "code": exc.code,
+            "message": exc.message,
+            "request_id": request_id,
+        }
+    }
+    if exc.details:
+        content["error"].update(exc.details)
+    response = JSONResponse(status_code=exc.status_code, content=content)
+    # 429: add Retry-After header
+    if exc.status_code == 429 and getattr(exc, "retry_after", None) is not None:
+        response.headers["Retry-After"] = str(exc.retry_after)
+    return response
 
 
 app.include_router(api_router, prefix="/api", tags=["api"])

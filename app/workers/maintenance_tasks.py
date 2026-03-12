@@ -96,3 +96,31 @@ def enforce_data_retention(self):
     """Nightly: soft-delete messages past retention window (per user privacy_settings)."""
     log.info("maintenance.enforce_data_retention.started")
     asyncio.run(_run_enforce_data_retention())
+
+
+@celery_app.task(bind=True)
+def cleanup_user_s3(self, user_id: str):
+    """Delete all S3 objects under prefix for the given user (e.g. uploads/{user_id}/). Called before account deletion."""
+    from app.config import get_settings
+    import boto3
+
+    settings = get_settings()
+    if not settings.S3_BUCKET_NAME or not getattr(settings, "AWS_ACCESS_KEY_ID", None):
+        log.warning("maintenance.cleanup_user_s3.skipped", user_id=user_id, reason="S3 not configured")
+        return
+    try:
+        client = boto3.client("s3", region_name=settings.AWS_REGION)
+        paginator = client.get_paginator("list_objects_v2")
+        prefix = f"uploads/{user_id}/"
+        for page in paginator.paginate(Bucket=settings.S3_BUCKET_NAME, Prefix=prefix):
+            contents = page.get("Contents") or []
+            if not contents:
+                continue
+            keys = [obj["Key"] for obj in contents]
+            client.delete_objects(
+                Bucket=settings.S3_BUCKET_NAME,
+                Delete={"Objects": [{"Key": k} for k in keys], "Quiet": True},
+            )
+        log.info("maintenance.cleanup_user_s3.done", user_id=user_id)
+    except Exception as e:
+        log.warning("maintenance.cleanup_user_s3.failed", user_id=user_id, error=str(e))

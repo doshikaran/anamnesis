@@ -7,6 +7,7 @@ import base64
 import json
 from uuid import UUID
 
+import httpx
 import structlog
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import RedirectResponse
@@ -27,6 +28,7 @@ from app.schemas.connection import (
     connection_to_response,
     job_to_response,
 )
+from app.core.rate_limiter import rate_limit
 from app.services.auth_service import save_connection_tokens
 from app.workers.sync_tasks import sync_connection
 
@@ -53,7 +55,7 @@ def _decode_state(state: str) -> dict:
 
 
 # ---------- Google connection OAuth ----------
-@router.post("/google/init")
+@router.post("/google/init", dependencies=[rate_limit(5, 300, "connections_init")])
 async def connections_google_init(
     request: Request,
     source_type: str = "gmail",
@@ -154,16 +156,93 @@ async def connections_microsoft_callback(request: Request):
     return RedirectResponse(url=f"{settings.FRONTEND_URL}/settings/connections?error=not_implemented")
 
 
-# ---------- Slack (stub) ----------
-@router.post("/slack/init")
-async def connections_slack_init(current_user: User = Depends(get_current_user)):
-    """Start Slack OAuth. Phase 8."""
-    raise ValidationError(code="NOT_IMPLEMENTED", message="Slack connection not yet implemented")
+# ---------- Slack ----------
+SLACK_SCOPES = "channels:history,im:history,mpim:history,groups:history,users:read,team:read"
+
+
+@router.post("/slack/init", dependencies=[rate_limit(5, 300, "connections_init")])
+async def connections_slack_init(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+):
+    """Start Slack OAuth. Returns auth_url for redirect."""
+    if not settings.SLACK_CLIENT_ID:
+        raise ValidationError(code="OAUTH_NOT_CONFIGURED", message="Slack OAuth not configured")
+    base = str(request.base_url).rstrip("/")
+    redirect_uri = f"{base}/api/connections/slack/callback"
+    state = _encode_state({
+        "user_id": str(current_user.id),
+        "redirect_uri": redirect_uri,
+    })
+    auth_url = (
+        "https://slack.com/oauth/v2/authorize"
+        f"?client_id={settings.SLACK_CLIENT_ID}&scope={SLACK_SCOPES.replace(' ', '%20')}"
+        f"&redirect_uri={redirect_uri}&state={state}"
+    )
+    return {"auth_url": auth_url}
 
 
 @router.get("/slack/callback")
-async def connections_slack_callback(request: Request):
-    return RedirectResponse(url=f"{settings.FRONTEND_URL}/settings/connections?error=not_implemented")
+async def connections_slack_callback(
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Slack OAuth callback. Exchange code for bot token, save connection, redirect to frontend."""
+    if error:
+        log.warning("connections.slack_callback_error", error=error)
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/settings/connections?error={error}")
+    if not code or not state:
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/settings/connections?error=missing_code")
+    data = _decode_state(state)
+    user_id_str = data.get("user_id")
+    if not user_id_str:
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/settings/connections?error=invalid_state")
+    try:
+        user_id = UUID(user_id_str)
+    except ValueError:
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/settings/connections?error=invalid_state")
+    base = str(request.base_url).rstrip("/")
+    redirect_uri = f"{base}/api/connections/slack/callback"
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        r = await client.post(
+            "https://slack.com/api/oauth.v2.access",
+            data={
+                "client_id": settings.SLACK_CLIENT_ID,
+                "client_secret": settings.SLACK_CLIENT_SECRET,
+                "code": code,
+                "redirect_uri": redirect_uri,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+    if r.status_code != 200:
+        log.warning("connections.slack_token_failed", status_code=r.status_code)
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/settings/connections?error=token_failed")
+    body = r.json()
+    if not body.get("ok"):
+        log.warning("connections.slack_token_error", error=body.get("error"))
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/settings/connections?error={body.get('error', 'unknown')}")
+    access_token = body.get("access_token") or ""
+    team = body.get("team") or {}
+    slack_team_id = team.get("id") or ""
+    slack_team_name = team.get("name") or ""
+    try:
+        await save_connection_tokens(
+            db,
+            user_id,
+            source_type="slack",
+            access_token=access_token,
+            refresh_token="",
+            slack_team_id=slack_team_id,
+            slack_team_name=slack_team_name,
+            display_name=slack_team_name or "Slack",
+        )
+    except Exception as e:
+        log.exception("connections.slack_save_failed", error=str(e))
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/settings/connections?error=save_failed")
+    return RedirectResponse(url=f"{settings.FRONTEND_URL}/settings/connections?connected=slack")
 
 
 # ---------- Notion (stub) ----------
@@ -245,7 +324,7 @@ async def delete_connection(
     await db.flush()
 
 
-@router.post("/{id}/sync")
+@router.post("/{id}/sync", dependencies=[rate_limit(2, 60, "connections_sync")])
 async def trigger_sync(
     id: UUID,
     full_sync: bool = False,

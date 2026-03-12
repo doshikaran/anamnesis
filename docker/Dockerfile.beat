@@ -1,4 +1,4 @@
-# Anamnesis Celery worker — multi-stage production build
+# Anamnesis Celery beat — same multi-stage base as worker
 FROM python:3.12-slim AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gcc \
@@ -8,7 +8,6 @@ WORKDIR /build
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
 
-# Stage 2: runtime
 FROM python:3.12-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
@@ -20,6 +19,4 @@ COPY app ./app
 COPY alembic.ini .
 
 USER anamnesis
-CMD ["celery", "-A", "app.workers.celery_app", "worker", \
-     "-Q", "sync,analysis,insights,notifications,maintenance", \
-     "--concurrency=4", "--max-tasks-per-child=100", "--loglevel=info"]
+CMD ["celery", "-A", "app.workers.celery_app", "beat", "--scheduler", "celery.beat.PersistentScheduler", "--loglevel=info"]

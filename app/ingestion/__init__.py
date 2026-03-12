@@ -5,5 +5,6 @@ from app.ingestion.base import BaseConnector, SyncResult, get_connector, CONNECT
 # Register connectors (side effect)
 from app.ingestion import gmail  # noqa: F401, E402
 from app.ingestion import google_calendar  # noqa: F401, E402
+from app.ingestion import slack  # noqa: F401, E402
 
 __all__ = ["BaseConnector", "SyncResult", "get_connector", "CONNECTOR_REGISTRY"]

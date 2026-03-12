@@ -54,8 +54,17 @@ class ValidationError(AnamnesisException):
 class RateLimitError(AnamnesisException):
     """Too many requests (429)."""
 
-    def __init__(self, code: str = "RATE_LIMIT_EXCEEDED", message: str = "Too many requests"):
-        super().__init__(code=code, message=message, status_code=429)
+    def __init__(
+        self,
+        code: str = "RATE_LIMIT_EXCEEDED",
+        message: str = "Too many requests",
+        retry_after: int | None = None,
+    ):
+        details: dict[str, Any] = {}
+        if retry_after is not None:
+            details["retry_after"] = retry_after
+        super().__init__(code=code, message=message, status_code=429, details=details)
+        self.retry_after = retry_after
 
 
 class ExternalAPIError(AnamnesisException):

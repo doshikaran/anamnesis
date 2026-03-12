@@ -104,15 +104,23 @@ async def save_connection_tokens(
     token_expires_at=None,
     scopes: list[str] | None = None,
     display_name: str | None = None,
+    slack_team_id: str | None = None,
+    slack_team_name: str | None = None,
 ) -> Connection:
     """
     Save or update OAuth tokens for a data-source connection.
     Encrypts tokens before storing. Creates connection if not exists.
+    For Slack: pass slack_team_id and slack_team_name from oauth.v2.access response.
     """
     access_encrypted = encrypt_token(user_id, access_token)
     refresh_encrypted = encrypt_token(user_id, refresh_token)
     repo = ConnectionRepository(db, Connection)
     existing = await repo.get_by_user_and_source_type(user_id, source_type)
+    extra: dict = {}
+    if slack_team_id is not None:
+        extra["slack_team_id"] = slack_team_id
+    if slack_team_name is not None:
+        extra["slack_team_name"] = slack_team_name
     if existing:
         await repo.update(
             existing,
@@ -124,6 +132,7 @@ async def save_connection_tokens(
             status="active",
             last_error=None,
             error_count=0,
+            **extra,
         )
         await db.flush()
         return existing
@@ -136,6 +145,7 @@ async def save_connection_tokens(
         scopes=scopes,
         display_name=display_name,
         status="active",
+        **extra,
     )
 
 

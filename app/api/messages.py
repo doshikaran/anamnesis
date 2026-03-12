@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_session_factory
 from app.core.unit_of_work import UnitOfWork
 from app.core.exceptions import NotFoundError
+from app.core.rate_limiter import rate_limit
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.models.message import Message
@@ -112,7 +113,7 @@ async def get_message(
     return message_to_response(msg)
 
 
-@router.post("/manual", response_model=MessageResponse)
+@router.post("/manual", response_model=MessageResponse, dependencies=[rate_limit(20, 60, "messages_manual")])
 async def create_manual_note(
     body: ManualNoteCreateSchema,
     current_user: User = Depends(get_current_user),

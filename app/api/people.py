@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_session_factory
 from app.core.unit_of_work import UnitOfWork
 from app.core.exceptions import NotFoundError
+from app.core.rate_limiter import rate_limit
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.models.person import Person
@@ -92,7 +93,7 @@ async def get_person(
     return person_to_detail_response(person)
 
 
-@router.patch("/{id}", response_model=PersonResponse)
+@router.patch("/{id}", response_model=PersonResponse, dependencies=[rate_limit(30, 60, "people_patch")])
 async def update_person(
     id: UUID,
     body: PersonUpdateSchema,

@@ -16,6 +16,7 @@ from app.ai.client import estimate_cost_usd, stream_claude
 from app.ai.query_engine import QueryResult, run_query
 from app.core.database import get_session_factory
 from app.core.unit_of_work import UnitOfWork
+from app.core.rate_limiter import rate_limit
 from app.dependencies import get_current_user
 from app.models.user import User
 from app.schemas.query_schema import QueryCreateSchema, QueryResponseSchema
@@ -91,7 +92,7 @@ async def _stream_sse_events(
             )
 
 
-@router.post("", status_code=200)
+@router.post("", status_code=200, dependencies=[rate_limit(10, 60, "queries")])
 async def create_query_stream(
     body: QueryCreateSchema,
     current_user: User = Depends(get_current_user),

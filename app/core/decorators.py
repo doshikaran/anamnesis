@@ -52,7 +52,7 @@ def with_retry(
 
 def rate_limited(calls_per_minute: int, key_prefix: str = "rl"):
     """
-    Per-user rate limiting using Redis sliding window.
+    Per-user rate limiting using Redis sliding window (same as app.core.rate_limiter).
     Expects first arg or kwargs to include 'user_id' (UUID) or similar.
     Raises RateLimitError if exceeded.
     """
@@ -60,23 +60,20 @@ def rate_limited(calls_per_minute: int, key_prefix: str = "rl"):
     def decorator(func: F) -> F:
         @wraps(func)
         async def wrapper(*args, **kwargs):
-            from app.core.exceptions import RateLimitError
+            from redis.asyncio import Redis
+            from app.core.redis import get_redis_pool
             from app.core.rate_limiter import check_rate_limit
 
             user_id = kwargs.get("user_id") or (kwargs.get("current_user") and getattr(kwargs["current_user"], "id", None)) or (args[0] if args else None)
             if user_id is None:
                 return await func(*args, **kwargs)
             uid = str(getattr(user_id, "id", user_id) if hasattr(user_id, "id") else user_id)
-            allowed = await check_rate_limit(
-                key=f"{key_prefix}:{uid}",
-                limit=calls_per_minute,
-                window_seconds=60,
-            )
-            if not allowed:
-                raise RateLimitError(
-                    code="RATE_LIMIT_EXCEEDED",
-                    message=f"Rate limit exceeded. Max {calls_per_minute} requests per minute.",
-                )
+            pool = get_redis_pool()
+            client = Redis(connection_pool=pool)
+            try:
+                await check_rate_limit(client, uid, key_prefix, calls_per_minute, 60)
+            finally:
+                await client.aclose()
             return await func(*args, **kwargs)
 
         return wrapper  # type: ignore[return-value]

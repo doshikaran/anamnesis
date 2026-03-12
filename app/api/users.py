@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.rate_limiter import rate_limit
 from app.dependencies import get_current_user, get_db, get_redis
 from app.models.user import User
 from app.repositories.user_repository import UserRepository
@@ -114,17 +115,19 @@ async def users_me_export(current_user: User = Depends(get_current_user)):
     return {"message": "Export requested. You will receive a link when ready."}
 
 
-@router.delete("/me")
+@router.delete("/me", status_code=204, dependencies=[rate_limit(1, 3600, "users_delete")])
 async def users_me_delete(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ):
-    """Request account deletion (protected). Soft-delete; cascade handled by DB."""
+    """Permanently delete account (GDPR). Revokes OAuth, Stripe, S3 cleanup, bulk DB delete, Redis purge."""
+    from app.services.user_service import delete_user_account
+    from app.core.database import get_session_factory
     repo = UserRepository(db, User)
     user = await repo.get_by_id_active(current_user.id)
     if not user:
         raise NotFoundError(code="USER_NOT_FOUND", message="User not found")
-    from datetime import datetime, timezone
-    await repo.update(user, delete_requested_at=datetime.now(timezone.utc))
-    log.info("users.delete_requested", user_id=str(current_user.id))
-    return {"success": True, "message": "Account deletion requested."}
+    factory = get_session_factory()
+    await delete_user_account(factory, user, redis)
+    # 204 No Content
