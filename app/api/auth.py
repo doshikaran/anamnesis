@@ -60,7 +60,7 @@ async def auth_google_callback(
     redirect_uri = str(request.base_url).rstrip("/") + "/api/auth/google/callback"
     try:
         result = await handle_google_callback(db, redis, code=code, state=state, redirect_uri=redirect_uri)
-        return RedirectResponse(url=f"{settings.FRONTEND_URL}/auth/callback?access_token={result.access_token}&refresh_token={result.refresh_token}")
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/auth/callback/google?access_token={result.access_token}&refresh_token={result.refresh_token}")
     except Exception as e:
         log.exception("auth.google_callback_failed", error=str(e))
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/auth/error?error=callback_failed")
@@ -97,7 +97,7 @@ async def auth_microsoft_callback(
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/auth/error?error=missing_code")
     try:
         result = await handle_microsoft_callback(db, redis, code=code, state=state)
-        return RedirectResponse(url=f"{settings.FRONTEND_URL}/auth/callback?access_token={result.access_token}&refresh_token={result.refresh_token}")
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/auth/callback/microsoft?access_token={result.access_token}&refresh_token={result.refresh_token}")
     except Exception as e:
         log.exception("auth.microsoft_callback_failed", error=str(e))
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/auth/error?error=callback_failed")
